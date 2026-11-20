@@ -141,3 +141,34 @@ test('a hole being played shot by shot only counts once holed', () => {
   assert.equal(S.roundTotals(r).holesPlayed, 1);
   assert.equal(S.roundTotals(r).strokes, 4);
 });
+
+test('strike quality: good fairways vs topped fairways, lucky and unlucky', () => {
+  const round = { id: 'r', date: '2026-11-01', holes: [
+    { par: 4, shots: [{ club: 'Driver', result: 'fairway', strike: 'topped', dir: 'S' }, { club: '7i', result: 'bunker', strike: 'good', dir: 'R' }] },
+    { par: 4, shots: [{ club: 'Driver', result: 'fairway', strike: 'good', dir: 'L' }, { club: '9i', result: 'green', strike: 'fat' }, { club: 'Putter', result: 'green', strike: 'good' }] },
+  ] };
+  const d = S.clubStats([round]).find((c) => c.club === 'Driver');
+  assert.deepEqual([d.teeFairways, d.teeStruck, d.teeGoodFairways], [2, 2, 1]);
+  assert.deepEqual(d.dirs, { L: 1, S: 1, R: 0 });
+  const st = S.strikeSummary([round]);
+  assert.equal(st.n, 4); // putter excluded
+  assert.equal(st.goodPct, 0.5);
+  assert.equal(st.unlucky, 1); // good 7i into the bunker
+  assert.equal(st.lucky, 2); // topped drive on fairway, fat 9i on green
+  assert.deepEqual(st.perRound, [{ id: 'r', date: '2026-11-01', courseName: undefined, n: 4, good: 2 }]);
+});
+
+test('putt misses by pace and line', () => {
+  const round = { holes: [{ par: 4, shots: [
+    { club: 'Putter', result: 'green', pace: 'short', dir: 'S' },
+    { club: 'Putter', result: 'green', pace: 'long', dir: 'R' },
+    { club: 'Putter', result: 'green', pace: 'short' },
+    { club: 'Putter', result: 'holed', pace: 'good', dir: 'S' },
+  ] }] };
+  const p = S.puttSummary([round]);
+  assert.equal(p.n, 3);
+  assert.equal(p.grid.short.S, 1);
+  assert.equal(p.grid.long.R, 1);
+  assert.deepEqual(p.pace, { short: 2, good: 0, long: 1 });
+  assert.equal(p.lineN, 2);
+});

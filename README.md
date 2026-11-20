@@ -6,12 +6,19 @@ A simple golf round tracker that runs entirely in the browser. You don't need to
 
 - **Play one hole at a time.** You see a big hole header, your running score, and a strip of every hole to jump between.
 - **Shot by shot with clubs.** For each shot, tap the club and then where it finished: Fairway, Rough, Green, Holed, Bunker, Trees/other, **Penalty area (drop)** or **OB/lost (stroke & distance)**. Your score, putts, fairway hit, greens in regulation and penalties are all worked out from your shots, with penalty strokes counted in the shot numbers. When you're on the green, the putter is suggested first. You can tap any shot to change or delete it, or use **Undo last shot**.
+- **How you struck it (optional).** On full shots, tap **Strike** (Good · Topped · Fat · Thin) and **Direction** (Left · Straight · Right). On putts, tap **Pace** (Short · Good pace · Long) and **Line** (Left · On target · Right). You can add these as you go, or later by tapping a shot.
 - **Quick score** for days you just want numbers: strokes, putts, fairway, plus **+ Drop** / **+ Stroke & distance** penalties. You can switch any hole between the two modes.
 - **Saving you can see.** Every tap is saved on the phone straight away. There's also a big **Save** button, a "Saved at 10:42" status, and a warning if saving ever fails. Rounds stay *In progress* until you tap **Finish round**, and the **Play** tab takes you back to where you left off, even after closing the app.
 - **My bag.** Choose the clubs you carry. They become the buttons you tap when recording shots.
 - **Courses.** Save each course's par for every hole, plus its course rating and slope.
 - **Scorecard.** See front-nine and back-nine totals, putts, fairways, greens in regulation and penalties, plus a shot-by-shot list for every hole.
-- **Stats.** See your estimated handicap index, scoring average, best round, putts per round, fairway %, greens in regulation %, penalties, how often you make each score, a chart of your scores over time, and a **club table**: shots hit, fairways off the tee and greens found with each club.
+- **Stats.** See your estimated handicap index, scoring average, best round, putts per round, fairway %, greens in regulation %, penalties, how often you make each score, a chart of your scores over time, and **ball-striking stats**:
+  - good-strike %, and how often you top, hit fat or hit thin
+  - your left/right miss pattern
+  - shots you struck well that still ended in trouble, and mishits that worked out anyway
+  - good strikes by round
+  - for each club: strike quality, direction, fairways vs. *well-struck* fairways off the tee, and greens found
+  - a putting grid of missed putts by pace and line
 - **Sync between devices** through a private GitHub Gist (see below), and **Export / import** a backup file.
 
 ## Put it on your phone

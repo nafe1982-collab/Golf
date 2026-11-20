@@ -212,7 +212,7 @@
 
   // ---------- play: one hole at a time ----------
   // UI-only state for the hole on screen.
-  const play = { key: null, club: null, edit: null, mode: {} };
+  const play = { key: null, club: null, edit: null, mode: {}, extra: {} };
 
   function holeMode(r, i) {
     const h = r.holes[i];
@@ -230,7 +230,7 @@
     const i = hn - 1;
     const h = r.holes[i];
     const key = r.id + ':' + i;
-    if (play.key !== key) Object.assign(play, { key, club: null, edit: null });
+    if (play.key !== key) Object.assign(play, { key, club: null, edit: null, extra: {} });
     const t = S.roundTotals(r);
     const mode = holeMode(r, i);
     const last = hn === r.holes.length;
@@ -294,17 +294,30 @@
         play.club = d.club;
         return renderPlay(r.id, hn);
       }
+      if (d.x) {
+        // optional strike / direction / pace detail: tap again to clear
+        const [field, val] = d.x.split(':');
+        const target = play.edit != null ? shots[play.edit] : play.extra;
+        if (target[field] === val) delete target[field];
+        else target[field] = val;
+        return play.edit != null ? changed() : renderPlay(r.id, hn);
+      }
       if (d.result) {
         if (play.edit != null) shots[play.edit].result = d.result;
         else {
-          shots.push({ club: play.club || null, result: d.result });
+          const shot = { club: play.club || null, result: d.result };
+          // a holed putt needs no pace/line
+          if (!(play.club === 'Putter' && d.result === 'holed')) Object.assign(shot, play.extra);
+          shots.push(shot);
           play.club = null;
+          play.extra = {};
         }
         return changed();
       }
       if (d.cancel != null) {
         play.club = null;
         play.edit = null;
+        play.extra = {};
         return renderPlay(r.id, hn);
       }
       if (d.editShot != null) {
@@ -397,7 +410,7 @@
             const pen = s.result === 'drop' || s.result === 'sd';
             return `<li><button type="button" class="shot ${play.edit === k ? 'editing' : ''}" data-edit-shot="${k}" aria-label="Edit shot ${nums[k]}">
               <span class="no">${nums[k]}</span><span class="club">${esc(s.club || '—')}</span>
-              <span class="res res-${s.result}">${resultLabel(s.result)}${pen ? ' <em>+1</em>' : ''}</span><span class="pencil" aria-hidden="true">✎</span></button></li>`;
+              <span class="res res-${s.result}">${resultLabel(s.result)}${pen ? ' <em>+1</em>' : ''}${shotTags(s) ? `<small class="tags">${shotTags(s)}</small>` : ''}</span><span class="pencil" aria-hidden="true">✎</span></button></li>`;
           })
           .join('')}</ol>`
       : '';
@@ -409,6 +422,7 @@
         <div class="panel-title">Edit shot ${nums[play.edit]}</div>
         ${clubGrid(s.club, false, true)}
         ${resultGrid(s.club, s.result)}
+        ${extrasGrid(s.club, s)}
         <div class="row-btns"><button type="button" class="danger" data-delete-shot>Delete shot</button><button type="button" class="primary" data-cancel>Done</button></div>
       </div>`;
     } else if (holed) {
@@ -424,7 +438,9 @@
       </div>`;
     } else {
       panel = `<div class="panel">
-        <div class="panel-title">${esc(play.club || 'Shot')} <span class="muted">· where did it finish?</span></div>
+        <div class="panel-title">${esc(play.club || 'Shot')} <span class="muted">· how did it go?</span></div>
+        ${extrasGrid(play.club, play.extra)}
+        <div class="panel-sub" style="margin:12px 0 0">Where did it finish? <span class="muted">(saves the shot)</span></div>
         ${resultGrid(play.club, null)}
         <button type="button" class="link small" data-cancel>‹ Change club</button>
       </div>`;
@@ -442,6 +458,29 @@
     return `<div class="clubs">${clubs
       .map((c) => `<button type="button" class="${c === selected ? 'sel' : ''} ${onGreen && c === 'Putter' ? 'suggest' : ''}" data-club="${esc(c)}">${esc(c)}</button>`)
       .join('')}<button type="button" class="unknown ${editing && !selected ? 'sel' : ''}" data-club="">Not sure</button></div>`;
+  }
+
+  function extrasGrid(club, v) {
+    const row = (label, field, opts) => `<div class="xrow"><span class="xlbl">${label}</span><div class="xchips">${Object.entries(opts)
+      .map(([k, l]) => `<button type="button" class="xchip ${v[field] === k ? 'sel' : ''} ${k === 'good' || k === 'S' ? 'ok' : ''}" data-x="${field}:${k}" aria-pressed="${v[field] === k}">${l}</button>`)
+      .join('')}</div></div>`;
+    const rows =
+      club === 'Putter'
+        ? row('Pace', 'pace', S.PUTT_PACE) + row('Line', 'dir', S.PUTT_LINE)
+        : row('Strike', 'strike', S.STRIKES) + row('Direction', 'dir', { L: '← Left', S: 'Straight', R: 'Right →' });
+    return `<div class="extras">${rows}<div class="muted small">Optional – leave blank if you're not sure.</div></div>`;
+  }
+
+  function shotTags(s) {
+    const t = [];
+    if (s.club === 'Putter') {
+      if (S.PUTT_PACE[s.pace]) t.push(S.PUTT_PACE[s.pace]);
+      if (S.PUTT_LINE[s.dir]) t.push(S.PUTT_LINE[s.dir]);
+    } else {
+      if (S.STRIKES[s.strike]) t.push(s.strike === 'good' ? 'Good strike' : S.STRIKES[s.strike]);
+      if (S.DIRS[s.dir]) t.push(S.DIRS[s.dir]);
+    }
+    return t.join(', ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
   }
 
   function resultGrid(club, selected) {
@@ -546,7 +585,7 @@
                 if (!shots.length) return '';
                 const nums = S.strokeNumbers(shots);
                 return `<div class="shot-line"><strong>${i + 1}</strong> <span class="muted">par ${h.par} · ${h.strokes}</span><div>${shots
-                  .map((s, k) => `<span class="pill">${nums[k]}. ${esc(s.club || '?')} → ${resultLabel(s.result)}</span>`)
+                  .map((s, k) => `<span class="pill">${nums[k]}. ${esc(s.club || '?')} → ${resultLabel(s.result)}${shotTags(s) ? ` <span class="muted">(${shotTags(s).toLowerCase()})</span>` : ''}</span>`)
                   .join(' ')}</div></div>`;
               })
               .join('')}</details>`
@@ -770,8 +809,6 @@
     }
     const distRows = [['ace', 'Ace'], ['eagle', 'Eagle'], ['birdie', 'Birdie'], ['par', 'Par'], ['bogey', 'Bogey'], ['double+', 'Double+']];
     const maxD = Math.max(1, ...Object.values(st.distribution));
-    const clubs = S.clubStats(data.rounds);
-    const frac = (a, b) => (b ? `${Math.round((a / b) * 100)}% <span class="muted">(${a}/${b})</span>` : '–');
     view.innerHTML = `
       <h2>Stats</h2>
       <div class="tiles">
@@ -785,19 +822,9 @@
         <div class="tile"><div class="v">${st.rounds}</div><div class="k">Rounds · ${st.holes} holes</div></div>
       </div>
       <div class="card"><h3 class="h3 first">Recent 18-hole scores</h3>${trendChart()}</div>
-      <div class="card"><h3 class="h3 first">Clubs</h3>
-        ${
-          clubs.length
-            ? `<div class="table-wrap"><table class="clubtable">
-                <tr><th>Club</th><th>Shots</th><th>Fairway off tee</th><th>Found green</th><th>Penalties</th></tr>
-                ${clubs
-                  .map((c) => `<tr><th>${esc(c.club)}</th><td>${c.uses}</td><td>${frac(c.teeFairways, c.teeShots)}</td><td>${frac(c.toGreen, c.approach)}</td><td>${c.penalties || '–'}</td></tr>`)
-                  .join('')}
-              </table></div>
-              <p class="muted small" style="margin:8px 0 0">Fairway off tee: tee shots on par 4s and 5s. Found green: shots from off the green that finished on it or in the hole.</p>`
-            : `<p class="muted" style="margin:0">Record rounds shot by shot to see how each club performs.</p>`
-        }
-      </div>
+      ${strikingCard()}
+      ${clubsCard()}
+      ${puttingCard()}
       <div class="card"><h3 class="h3 first">Score distribution</h3>
         <div class="bars">${distRows
           .map(([k, label]) => {
@@ -816,6 +843,77 @@
         }
       </div>
       <p class="muted small">Handicap is an estimate following World Handicap System averaging (best differentials of your last 20 complete rounds), with each hole capped at double bogey. Enter course rating and slope for accuracy.</p>`;
+  }
+
+  const pctOf = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '–');
+  const barRow = (label, n, max, right) =>
+    `<div class="bar"><span>${label}</span><div class="track"><div class="fill" style="width:${max ? (n / max) * 100 : 0}%"></div></div><span class="n">${right}</span></div>`;
+  // Left / straight / right as one stacked bar.
+  function dirBar(d, n) {
+    if (!n) return '';
+    return `<div class="dirbar" role="img" aria-label="Left ${pctOf(d.L, n)}, straight ${pctOf(d.S, n)}, right ${pctOf(d.R, n)}">${['L', 'S', 'R']
+      .map((k) => (d[k] ? `<span class="d-${k}" style="flex-grow:${d[k]}">${pctOf(d[k], n)}</span>` : ''))
+      .join('')}</div><div class="dirlegend"><span>◀ Left</span><span>Straight</span><span>Right ▶</span></div>`;
+  }
+
+  function strikingCard() {
+    const st = S.strikeSummary(data.rounds);
+    if (!st.n && !st.dirN)
+      return `<div class="card"><h3 class="h3 first">Ball striking</h3><p class="muted" style="margin:0">When recording a shot, tap <strong>Strike</strong> (Good, Topped, Fat, Thin) and <strong>Direction</strong> to see how well you're really hitting it – not just where it ended up.</p></div>`;
+    const max = Math.max(...Object.values(st.counts));
+    const recent = st.perRound.slice(-10);
+    return `<div class="card"><h3 class="h3 first">Ball striking</h3>
+      ${st.n ? `<div class="bigstat"><b>${pctOf(st.counts.good, st.n)}</b> good strikes <span class="muted">(${st.counts.good} of ${st.n} full shots)</span></div>
+      <div class="bars">${Object.entries(S.STRIKES).map(([k, l]) => barRow(l, st.counts[k], max, `${st.counts[k]} · ${pctOf(st.counts[k], st.n)}`)).join('')}</div>` : ''}
+      ${st.dirN ? `<h4 class="h4">Direction <span class="muted">(${st.dirN} shots)</span></h4>${dirBar(st.dirs, st.dirN)}` : ''}
+      ${st.n ? `<div class="luck">
+        <div><b>${st.unlucky}</b><span>Hit it well, still ended in trouble</span></div>
+        <div><b>${st.lucky}</b><span>Mishit, but got away with it</span></div>
+      </div>` : ''}
+      ${recent.length > 1 ? `<h4 class="h4">Good strikes by round</h4><div class="bars">${recent
+        .map((r) => barRow(new Date(r.date + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), r.good, r.n, pctOf(r.good, r.n)))
+        .join('')}</div>` : ''}
+    </div>`;
+  }
+
+  function clubsCard() {
+    const clubs = S.clubStats(data.rounds);
+    if (!clubs.length)
+      return `<div class="card"><h3 class="h3 first">Clubs</h3><p class="muted" style="margin:0">Record rounds shot by shot to see how each club performs.</p></div>`;
+    return `<div class="card"><h3 class="h3 first">Clubs</h3>${clubs
+      .map((c) => {
+        const lines = [];
+        if (c.struck) {
+          const misses = ['topped', 'fat', 'thin'].filter((k) => c.strikes[k]).map((k) => `${c.strikes[k]} ${k}`);
+          lines.push(`<div><span class="k">Strike</span><b>${pctOf(c.strikes.good, c.struck)}</b> good${misses.length ? ` · ${misses.join(' · ')}` : ''}</div>`);
+        }
+        if (c.teeShots) {
+          lines.push(`<div><span class="k">Off the tee</span><b>${pctOf(c.teeFairways, c.teeShots)}</b> fairways${c.teeStruck ? ` · <b>${pctOf(c.teeGoodFairways, c.teeStruck)}</b> well-struck fairways` : ''}</div>`);
+        }
+        if (c.approach) lines.push(`<div><span class="k">Found green</span><b>${pctOf(c.toGreen, c.approach)}</b> <span class="muted">(${c.toGreen}/${c.approach})</span></div>`);
+        if (c.penalties) lines.push(`<div><span class="k">Penalties</span>${c.penalties}</div>`);
+        return `<div class="clubrow"><div class="cr-head"><strong>${esc(c.club)}</strong><span class="muted">${c.uses} shot${c.uses === 1 ? '' : 's'}</span></div>
+          <div class="cr-lines">${lines.join('')}</div>${c.club !== 'Putter' ? dirBar(c.dirs, c.aimed) : ''}</div>`;
+      })
+      .join('')}
+      <p class="muted small" style="margin:8px 0 0">Well-struck fairways: tee shots on par 4s and 5s that found the fairway <em>and</em> were marked as a good strike. Found green: shots from off the green that finished on it or in the hole.</p>
+    </div>`;
+  }
+
+  function puttingCard() {
+    const p = S.puttSummary(data.rounds);
+    if (!p.n) return '';
+    const max = Math.max(1, ...['short', 'good', 'long'].flatMap((k) => ['L', 'S', 'R'].map((l) => p.grid[k][l])));
+    return `<div class="card"><h3 class="h3 first">Putting misses <span class="muted">(${p.n} missed putts)</span></h3>
+      <table class="puttgrid">
+        <tr><th></th><th>Left</th><th>On target</th><th>Right</th></tr>
+        ${['long', 'good', 'short']
+          .map((k) => `<tr><th>${S.PUTT_PACE[k]}</th>${['L', 'S', 'R'].map((l) => `<td style="--heat:${p.grid[k][l] / max}">${p.grid[k][l] || ''}</td>`).join('')}</tr>`)
+          .join('')}
+      </table>
+      <p class="small" style="margin:10px 0 0">${p.paceN ? `Pace: <b>${pctOf(p.pace.short, p.paceN)}</b> short · <b>${pctOf(p.pace.good, p.paceN)}</b> good · <b>${pctOf(p.pace.long, p.paceN)}</b> long` : ''}${p.paceN && p.lineN ? '<br>' : ''}${p.lineN ? `Line: <b>${pctOf(p.line.L, p.lineN)}</b> left · <b>${pctOf(p.line.S, p.lineN)}</b> on target · <b>${pctOf(p.line.R, p.lineN)}</b> right` : ''}</p>
+      <p class="muted small" style="margin:6px 0 0">The grid counts misses where both pace and line were recorded.</p>
+    </div>`;
   }
 
   function trendChart() {

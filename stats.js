@@ -32,6 +32,12 @@
     drop: 'Penalty area (drop)',
     sd: 'OB / lost (stroke & distance)',
   };
+  // Optional detail per shot. Full shots: strike + direction. Putts: pace + line.
+  const STRIKES = { good: 'Good', topped: 'Topped', fat: 'Fat', thin: 'Thin' };
+  const DIRS = { L: 'Left', S: 'Straight', R: 'Right' };
+  const PUTT_PACE = { short: 'Short', good: 'Good pace', long: 'Long' };
+  const PUTT_LINE = { L: 'Left', S: 'On target', R: 'Right' };
+  const GOOD_OUTCOME = { fairway: 1, green: 1, holed: 1 };
   const shotsOf = (h) => (Array.isArray(h.shots) ? h.shots : []);
   const isPutter = (club) => club === 'Putter';
 
@@ -65,7 +71,11 @@
 
   function clubStats(rounds) {
     const by = {};
-    const get = (c) => (by[c] = by[c] || { club: c, uses: 0, teeShots: 0, teeFairways: 0, approach: 0, toGreen: 0, penalties: 0 });
+    const get = (c) =>
+      (by[c] = by[c] || {
+        club: c, uses: 0, teeShots: 0, teeFairways: 0, teeStruck: 0, teeGoodFairways: 0, approach: 0, toGreen: 0, penalties: 0,
+        struck: 0, strikes: { good: 0, topped: 0, fat: 0, thin: 0 }, aimed: 0, dirs: { L: 0, S: 0, R: 0 },
+      });
     rounds.forEach((r) =>
       r.holes.forEach((h) => {
         // Where each shot was played from: stroke & distance replays from the
@@ -78,10 +88,20 @@
           const c = get(s.club);
           c.uses++;
           if (s.result === 'drop' || s.result === 'sd') c.penalties++;
+          if (!isPutter(s.club)) {
+            if (STRIKES[s.strike]) (c.struck++, c.strikes[s.strike]++);
+            if (DIRS[s.dir]) (c.aimed++, c.dirs[s.dir]++);
+          }
           const teeOnLongHole = from === 'tee' && h.par >= 4;
           if (teeOnLongHole) {
             c.teeShots++;
-            if (s.result === 'fairway' || s.result === 'green' || s.result === 'holed') c.teeFairways++;
+            const fw = s.result === 'fairway' || s.result === 'green' || s.result === 'holed';
+            if (fw) c.teeFairways++;
+            // "Well-struck fairway": found the fairway AND hit it well.
+            if (STRIKES[s.strike]) {
+              c.teeStruck++;
+              if (fw && s.strike === 'good') c.teeGoodFairways++;
+            }
           }
           // Tee shots on par 4s/5s aren't trying to find the green.
           if (!isPutter(s.club) && from !== 'green' && !teeOnLongHole) {
@@ -93,6 +113,61 @@
     );
     const order = (c) => (ALL_CLUBS.indexOf(c) === -1 ? 99 : ALL_CLUBS.indexOf(c));
     return Object.values(by).sort((a, b) => order(a.club) - order(b.club));
+  }
+
+  // Ball striking across full shots (not putts) where a strike was recorded.
+  function strikeSummary(rounds) {
+    const out = { n: 0, counts: { good: 0, topped: 0, fat: 0, thin: 0 }, dirN: 0, dirs: { L: 0, S: 0, R: 0 }, unlucky: 0, lucky: 0, perRound: [] };
+    rounds
+      .slice()
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+      .forEach((r) => {
+        let n = 0;
+        let good = 0;
+        r.holes.forEach((h) =>
+          shotsOf(h).forEach((s) => {
+            if (isPutter(s.club)) return;
+            if (DIRS[s.dir]) (out.dirN++, out.dirs[s.dir]++);
+            if (!STRIKES[s.strike]) return;
+            n++;
+            out.counts[s.strike]++;
+            const goodOutcome = !!GOOD_OUTCOME[s.result];
+            if (s.strike === 'good') {
+              good++;
+              if (!goodOutcome) out.unlucky++; // hit it well, still ended up in trouble
+            } else if (goodOutcome) out.lucky++; // mishit, got away with it
+          })
+        );
+        if (n) out.perRound.push({ id: r.id, date: r.date, courseName: r.courseName, n, good });
+        out.n += n;
+      });
+    out.goodPct = out.n ? out.counts.good / out.n : null;
+    return out;
+  }
+
+  // Missed putts by pace and line, e.g. grid.short.S = short but on target.
+  function puttSummary(rounds) {
+    const grid = { short: { L: 0, S: 0, R: 0 }, good: { L: 0, S: 0, R: 0 }, long: { L: 0, S: 0, R: 0 } };
+    const pace = { short: 0, good: 0, long: 0 };
+    const line = { L: 0, S: 0, R: 0 };
+    let n = 0;
+    let paceN = 0;
+    let lineN = 0;
+    rounds.forEach((r) =>
+      r.holes.forEach((h) =>
+        shotsOf(h).forEach((s) => {
+          if (!isPutter(s.club) || s.result === 'holed') return;
+          const p = PUTT_PACE[s.pace] ? s.pace : null;
+          const l = PUTT_LINE[s.dir] ? s.dir : null;
+          if (!p && !l) return;
+          n++;
+          if (p) (paceN++, pace[p]++);
+          if (l) (lineN++, line[l]++);
+          if (p && l) grid[p][l]++;
+        })
+      )
+    );
+    return { n, paceN, lineN, pace, line, grid };
   }
 
   function roundTotals(round) {
@@ -207,7 +282,7 @@
     };
   }
 
-  const api = { ALL_CLUBS, DEFAULT_BAG, RESULTS, shotsOf, applyShots, strokeNumbers, isHoled, clubStats, PENALTY_TYPES, penaltiesOf, roundTotals, isGir, scoreName, formatToPar, differential, handicapIndex, overallStats };
+  const api = { STRIKES, DIRS, PUTT_PACE, PUTT_LINE, strikeSummary, puttSummary, ALL_CLUBS, DEFAULT_BAG, RESULTS, shotsOf, applyShots, strokeNumbers, isHoled, clubStats, PENALTY_TYPES, penaltiesOf, roundTotals, isGir, scoreName, formatToPar, differential, handicapIndex, overallStats };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GolfStats = api;
 })(typeof window !== 'undefined' ? window : globalThis);

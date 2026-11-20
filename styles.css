@@ -196,7 +196,7 @@ input[type=number] { width: 7rem; }
 .results { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; }
 .res-btn { min-height: 56px; flex-direction: column; gap: 0; line-height: 1.2; }
 .res-btn small { font-weight: 500; font-size: .7rem; }
-.res-btn.res-holed { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.res-btn.res-holed { color: var(--accent); border: 2px solid var(--accent); }
 .res-btn.res-drop, .res-btn.res-sd { background: var(--pen-bg); border-color: var(--pen); color: var(--pen); }
 .res-btn.sel { outline: 3px solid var(--accent); outline-offset: 1px; }
 .holed { text-align: center; padding: 14px 8px 4px; font-size: 1.15rem; }
@@ -265,3 +265,37 @@ table.scorecard, table.clubtable { border-collapse: collapse; font-size: .85rem;
 .clubtable tr:first-child th { white-space: normal; vertical-align: bottom; }
 .clubtable td .muted { display: block; font-size: .72rem; }
 .clubtable th, .clubtable td { padding: 7px 6px; }
+
+/* ---------- strike / direction / pace detail ---------- */
+.extras { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border-radius: 12px; background: var(--surface-2); }
+.xrow { display: grid; gap: 4px; }
+.xlbl { font-size: .75rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.xchips { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+.xchip { min-height: 44px; padding: 4px 2px; font-size: .9rem; }
+.xchip.sel { background: var(--text); color: var(--surface); border-color: var(--text); }
+.xchip.ok.sel { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.shot .tags { display: block; font-size: .75rem; color: var(--muted); font-weight: 500; }
+
+.h4 { font-size: .85rem; margin: 16px 0 6px; color: var(--muted); }
+.bigstat { font-size: .95rem; margin-bottom: 10px; }
+.bigstat b { font-size: 1.8rem; margin-right: 4px; }
+.dirbar { display: flex; height: 26px; border-radius: 8px; overflow: hidden; font-size: .75rem; font-weight: 700; margin-top: 6px; }
+.dirbar span { display: grid; place-items: center; min-width: 34px; color: #fff; overflow: hidden; white-space: nowrap; }
+.dirbar .d-L { background: #b4683a; }
+.dirbar .d-S { background: var(--accent); }
+.dirbar .d-R { background: #3a6db4; }
+.dirlegend { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); margin-top: 2px; }
+.luck { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.luck div { background: var(--surface-2); border-radius: 10px; padding: 10px; }
+.luck b { display: block; font-size: 1.4rem; }
+.luck span { font-size: .78rem; color: var(--muted); }
+.clubrow { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.clubrow:last-of-type { border-bottom: 0; }
+.cr-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.cr-head strong { font-size: 1.05rem; }
+.cr-lines { display: grid; gap: 2px; font-size: .88rem; }
+.cr-lines .k { display: inline-block; width: 6.5rem; color: var(--muted); font-size: .8rem; }
+.puttgrid { border-collapse: separate; border-spacing: 4px; width: 100%; font-size: .85rem; }
+.puttgrid th { font-weight: 600; color: var(--muted); font-size: .78rem; }
+.puttgrid td { text-align: center; height: 44px; border-radius: 8px; font-weight: 800; font-size: 1.05rem;
+  background: color-mix(in srgb, var(--accent) calc(var(--heat) * 70%), var(--surface-2)); }
