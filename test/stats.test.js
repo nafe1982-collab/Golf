@@ -59,3 +59,20 @@ test('overallStats aggregates', () => {
   assert.equal(st.distribution.bogey, 30);
   assert.equal(st.distribution.par, 24);
 });
+
+test('penalties are counted by type', () => {
+  const r = evenPar('2026-01-01');
+  r.holes[0].penalties = [{ type: 'sd' }, { type: 'drop' }];
+  r.holes[5].penalties = [{ type: 'drop' }];
+  const t = S.roundTotals(r);
+  assert.deepEqual([t.penalties, t.penaltiesDrop, t.penaltiesSD], [3, 2, 1]);
+  const st = S.overallStats([r, evenPar('2026-01-02')]);
+  assert.equal(st.penaltiesPerRound, 1.5);
+  assert.equal(st.penaltiesSD, 1);
+});
+
+test('rounds saved before penalties existed still work', () => {
+  const r = evenPar('2026-01-01');
+  r.holes.forEach((h) => delete h.penalties);
+  assert.equal(S.roundTotals(r).penalties, 0);
+});

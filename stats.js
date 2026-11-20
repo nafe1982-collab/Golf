@@ -11,6 +11,11 @@
     return round.holes.filter((h) => isNum(h.strokes) && h.strokes > 0);
   }
 
+  // Penalty types: 'drop' (1 stroke: penalty area, unplayable, etc.) and
+  // 'sd' (stroke and distance: OB, lost ball, replay from previous spot).
+  const PENALTY_TYPES = { drop: 'Drop', sd: 'Stroke & distance' };
+  const penaltiesOf = (h) => (Array.isArray(h.penalties) ? h.penalties : []);
+
   function roundTotals(round) {
     const holes = playedHoles(round);
     const strokes = sum(holes.map((h) => h.strokes));
@@ -28,6 +33,9 @@
       fairwayChances: fwHoles.length,
       gir: girHoles.filter(isGir).length,
       girChances: girHoles.length,
+      penalties: sum(holes.map((h) => penaltiesOf(h).length)),
+      penaltiesDrop: sum(holes.map((h) => penaltiesOf(h).filter((p) => p.type === 'drop').length)),
+      penaltiesSD: sum(holes.map((h) => penaltiesOf(h).filter((p) => p.type === 'sd').length)),
     };
   }
 
@@ -113,11 +121,14 @@
       fairwayPct: fw[1] ? fw[0] / fw[1] : null,
       girPct: gir[1] ? gir[0] / gir[1] : null,
       distribution: dist,
+      penaltiesPerRound: totals.length ? sum(totals.map((t) => t.penalties)) / totals.length : null,
+      penaltiesDrop: sum(totals.map((t) => t.penaltiesDrop)),
+      penaltiesSD: sum(totals.map((t) => t.penaltiesSD)),
       handicap: handicapIndex(rounds),
     };
   }
 
-  const api = { roundTotals, isGir, scoreName, formatToPar, differential, handicapIndex, overallStats };
+  const api = { PENALTY_TYPES, penaltiesOf, roundTotals, isGir, scoreName, formatToPar, differential, handicapIndex, overallStats };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GolfStats = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -9,6 +9,8 @@
   --under: #c0392b;
   --over: #2c5d9e;
   --danger: #b03a2e;
+  --pen: #a3540f;
+  --pen-bg: #fdf1e6;
   --radius: 10px;
   color-scheme: light;
 }
@@ -24,6 +26,8 @@
     --under: #ff7b6b;
     --over: #7fb0ff;
     --danger: #ff7b6b;
+    --pen: #f0a35e;
+    --pen-bg: #2b2016;
     color-scheme: dark;
   }
 }
@@ -148,3 +152,18 @@ table.scorecard { border-collapse: collapse; font-size: .85rem; min-width: 100%;
   display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center;
   padding: 16px; color: var(--muted); font-size: .85rem;
 }
+
+/* Penalties */
+.pen { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pen .lbl { width: 100%; font-size: .75rem; color: var(--muted); }
+.pen .chip {
+  padding: 1px 8px; font-size: .75rem; border-radius: 999px;
+  background: var(--pen-bg); border-color: var(--pen); color: var(--pen);
+}
+.pen-add { display: flex; gap: 4px; width: 100%; }
+.pen-add button { flex: 1; padding: 4px 2px; font-size: .72rem; }
+
+/* Sync */
+#sync-link { color: inherit; }
+#sync-link.err { color: var(--danger); font-weight: 600; }
+a.btn { text-decoration: none; display: inline-block; }

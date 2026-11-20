@@ -1,20 +1,20 @@
 (function () {
   'use strict';
   const S = window.GolfStats;
+  const G = window.GolfSync;
   const STORAGE_KEY = 'golf-tracker:v1';
+  const SYNC_KEY = 'golf-tracker:sync';
   const view = document.getElementById('view');
 
   // ---------- storage ----------
   function emptyData() {
-    return { version: 1, courses: [], rounds: [] };
+    return { version: 1, courses: [], rounds: [], deleted: {} };
   }
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return emptyData();
-      const d = JSON.parse(raw);
-      if (!d || !Array.isArray(d.courses) || !Array.isArray(d.rounds)) return emptyData();
-      return d;
+      return G.normalize(JSON.parse(raw));
     } catch (e) {
       return emptyData();
     }
@@ -26,7 +26,11 @@
     } catch (e) {
       console.warn('Could not save', e);
     }
+    scheduleSync(1500);
   }
+  // Mark a record as changed (for sync merging) / record a deletion.
+  const touch = (rec) => (rec.updatedAt = Date.now());
+  const tombstone = (id) => (data.deleted[id] = Date.now());
 
   // ---------- helpers ----------
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -49,15 +53,23 @@
   const parseNum = (v) => (v === '' || v == null || isNaN(Number(v)) ? null : Number(v));
 
   // ---------- routing ----------
-  function route() {
+  function route(keepScroll) {
     const [name, id] = (location.hash.slice(1) || 'rounds').split('/');
     const tab = { round: 'rounds', edit: 'new', course: 'courses' }[name] || name;
+    document.getElementById('sync-link').classList.toggle('active', name === 'sync');
     document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
-    const render = { rounds: renderRounds, new: renderNew, edit: renderEdit, round: renderRound, courses: renderCourses, course: renderCourse, stats: renderStats }[name] || renderRounds;
+    const render = { rounds: renderRounds, new: renderNew, edit: renderEdit, round: renderRound, courses: renderCourses, course: renderCourse, stats: renderStats, sync: renderSync }[name] || renderRounds;
     render(id);
-    window.scrollTo(0, 0);
+    if (!keepScroll) window.scrollTo(0, 0);
   }
-  window.addEventListener('hashchange', route);
+  // Re-render the current view in place (after sync brings in changes),
+  // unless the user is in the middle of typing in a form.
+  function rerender() {
+    const a = document.activeElement;
+    if (a && view.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return;
+    route(true);
+  }
+  window.addEventListener('hashchange', () => route());
   const go = (hash) => {
     if (location.hash === '#' + hash) route();
     else location.hash = hash;
@@ -125,7 +137,8 @@
         rating: course.rating ?? null,
         slope: course.slope ?? null,
         notes: '',
-        holes: course.holes.map((par) => ({ par, strokes: null, putts: null, fairway: null })),
+        holes: course.holes.map((par) => ({ par, strokes: null, putts: null, fairway: null, penalties: [] })),
+        updatedAt: Date.now(),
       };
       data.rounds.push(round);
       save();
@@ -149,8 +162,15 @@
       if (!btn) return;
       const i = Number(btn.closest('.hole').dataset.i);
       const h = r.holes[i];
-      const { field, delta, fw } = btn.dataset;
-      if (field) {
+      const { field, delta, fw, pen, unpen } = btn.dataset;
+      if (pen) {
+        // Each penalty is one stroke, so it is added to the hole score too.
+        h.penalties = S.penaltiesOf(h).concat({ type: pen });
+        h.strokes = h.strokes == null ? h.par + 1 : Math.min(15, h.strokes + 1);
+      } else if (unpen != null) {
+        h.penalties = S.penaltiesOf(h).filter((_, k) => k !== Number(unpen));
+        if (h.strokes != null) h.strokes = Math.max(1, h.strokes - 1);
+      } else if (field) {
         const start = field === 'strokes' ? h.par : 2;
         let v = h[field] == null ? start : h[field] + Number(delta);
         if (h[field] == null && Number(delta) < 0) v = start - 1;
@@ -161,8 +181,9 @@
         const val = fw === 'hit';
         h.fairway = h.fairway === val ? null : val;
       } else if (btn.dataset.clear != null) {
-        Object.assign(h, { strokes: null, putts: null, fairway: null });
+        Object.assign(h, { strokes: null, putts: null, fairway: null, penalties: [] });
       } else return;
+      touch(r);
       save();
       btn.closest('.hole').outerHTML = holeCard(h, i);
       updateSummary(r);
@@ -185,6 +206,16 @@
     return `<div class="hole ${cls}" data-i="${i}">
       <div class="hole-head"><span>Hole ${i + 1}</span><span class="par">Par ${h.par}</span></div>
       ${stepper('strokes', 'Strokes')}${stepper('putts', 'Putts')}${fwRow}
+      <div class="pen">
+        <span class="lbl">Penalty shots${S.penaltiesOf(h).length ? ` (${S.penaltiesOf(h).length})` : ''}</span>
+        ${S.penaltiesOf(h)
+          .map((p, k) => `<button type="button" class="chip" data-unpen="${k}" aria-label="Remove ${S.PENALTY_TYPES[p.type]} penalty, hole ${i + 1}">${p.type === 'sd' ? 'S&amp;D' : 'Drop'} ×</button>`)
+          .join('')}
+        <div class="pen-add">
+          <button type="button" data-pen="drop" title="1-stroke penalty with a drop (penalty area, unplayable lie…)">+ Drop</button>
+          <button type="button" data-pen="sd" title="Stroke and distance: replay from the previous spot (OB, lost ball…)">+ Stroke &amp; dist.</button>
+        </div>
+      </div>
       ${h.strokes != null ? `<button type="button" class="link muted" data-clear style="font-size:.75rem">clear</button>` : ''}
     </div>`;
   }
@@ -195,6 +226,7 @@
       <span><strong>${t.strokes || '–'}</strong> <span class="topar ${toParClass(t.toPar)}">${t.holesPlayed ? S.formatToPar(t.toPar) : ''}</span></span>
       <span class="muted">${t.holesPlayed}/${r.holes.length} holes</span>
       <span class="muted">Putts ${t.putts ?? '–'}</span>
+      ${t.penalties ? `<span class="muted">Penalties ${t.penalties}</span>` : ''}
       <span class="grow"></span>
       <button class="primary" data-go="round/${r.id}">Done</button>`;
   }
@@ -226,6 +258,8 @@
     const puttCell = (h) => `<td>${h.putts ?? ''}</td>`;
     puttCell.total = sumOf('putts');
     const fwCell = (h) => `<td>${h.par < 4 ? '' : h.fairway === true ? '✓' : h.fairway === false ? '✗' : ''}</td>`;
+    const penCell = (h) => `<td>${S.penaltiesOf(h).map((p) => (p.type === 'sd' ? 'S' : 'D')).join(' ')}</td>`;
+    penCell.total = (hs) => hs.reduce((a, h) => a + S.penaltiesOf(h).length, 0) || '';
     const girCell = (h) => `<td>${h.putts != null && h.strokes != null ? (S.isGir(h) ? '●' : '○') : ''}</td>`;
     const headLabels = halves.map(([, , l]) => l).concat(halves.length > 1 ? ['Tot'] : []);
     let holeRow = cells(holeNum);
@@ -240,6 +274,7 @@
         <div class="tile"><div class="v">${t.putts ?? '–'}</div><div class="k">Putts</div></div>
         <div class="tile"><div class="v">${t.fairwayChances ? `${t.fairwaysHit}/${t.fairwayChances}` : '–'}</div><div class="k">Fairways hit</div></div>
         <div class="tile"><div class="v">${t.girChances ? `${t.gir}/${t.girChances}` : '–'}</div><div class="k">Greens in regulation</div></div>
+        <div class="tile"><div class="v">${t.penalties}</div><div class="k">Penalty strokes${t.penalties ? ` · ${t.penaltiesDrop} drop, ${t.penaltiesSD} S&amp;D` : ''}</div></div>
         <div class="tile"><div class="v">${diff ?? '–'}</div><div class="k">Score differential</div></div>
       </div>
       <div class="card table-wrap">
@@ -250,8 +285,10 @@
           <tr><th>Putts</th>${cells(puttCell)}</tr>
           <tr><th>FW</th>${cells(fwCell)}</tr>
           <tr><th>GIR</th>${cells(girCell)}</tr>
+          <tr><th>Pen</th>${cells(penCell)}</tr>
         </table>
       </div>
+      <p class="muted" style="font-size:.8rem;margin-top:-4px">Pen: D = drop, S = stroke &amp; distance. Penalty strokes are included in the score.</p>
       <form class="card" id="meta-form">
         <div class="row">
           <label class="field">Course name<input name="courseName" value="${esc(r.courseName)}" required></label>
@@ -270,17 +307,22 @@
     view.querySelector('#meta-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const f = new FormData(e.target);
+      // A sync may have swapped in a newer copy of this round meanwhile.
+      const r = findRound(id);
+      if (!r) return alert('This round was deleted on another device.');
       r.courseName = String(f.get('courseName')).trim() || r.courseName;
       r.date = f.get('date') || r.date;
       r.rating = parseNum(f.get('rating'));
       r.slope = parseNum(f.get('slope'));
       r.notes = String(f.get('notes'));
+      touch(r);
       save();
       renderRound(r.id);
     });
     view.querySelector('#del-round').addEventListener('click', () => {
       if (!confirm('Delete this round? This cannot be undone.')) return;
       data.rounds = data.rounds.filter((x) => x.id !== r.id);
+      tombstone(r.id);
       save();
       go('rounds');
     });
@@ -353,9 +395,14 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const f = new FormData(form);
-      const rec = existing || { id: uid() };
+      // Re-look-up in case a sync replaced or removed this course meanwhile.
+      let rec = existing && findCourse(existing.id);
+      if (!rec) {
+        rec = { id: existing ? existing.id : uid() };
+        data.courses.push(rec);
+      }
       Object.assign(rec, { name: String(f.get('name')).trim(), holes: draft.slice(), rating: parseNum(f.get('rating')), slope: parseNum(f.get('slope')) });
-      if (!existing) data.courses.push(rec);
+      touch(rec);
       save();
       go('courses');
     });
@@ -364,6 +411,7 @@
       del.addEventListener('click', () => {
         if (!confirm('Delete this course? Rounds played there are kept.')) return;
         data.courses = data.courses.filter((x) => x.id !== existing.id);
+        tombstone(existing.id);
         save();
         go('courses');
       });
@@ -387,6 +435,7 @@
         <div class="tile"><div class="v">${num(st.puttsPerRound)}</div><div class="k">Putts / 18 holes</div></div>
         <div class="tile"><div class="v">${pct(st.fairwayPct)}</div><div class="k">Fairways hit</div></div>
         <div class="tile"><div class="v">${pct(st.girPct)}</div><div class="k">Greens in regulation</div></div>
+        <div class="tile"><div class="v">${num(st.penaltiesPerRound)}</div><div class="k">Penalty strokes / round</div></div>
         <div class="tile"><div class="v">${st.rounds}</div><div class="k">Rounds · ${st.holes} holes</div></div>
       </div>
       <div class="card"><h3 style="margin:0 0 10px;font-size:1rem">Recent 18-hole scores</h3>${trendChart()}</div>
@@ -397,6 +446,15 @@
             return `<div class="bar"><span>${label}</span><div class="track"><div class="fill" style="width:${(n / maxD) * 100}%"></div></div><span class="n">${n} · ${Math.round((n / st.holes) * 100)}%</span></div>`;
           })
           .join('')}</div>
+      </div>
+      <div class="card"><h3 style="margin:0 0 10px;font-size:1rem">Penalties</h3>
+        ${
+          st.penaltiesDrop + st.penaltiesSD
+            ? `<div class="bars">${[['Drop', st.penaltiesDrop], ['Stroke &amp; dist.', st.penaltiesSD]]
+                .map(([label, n]) => `<div class="bar"><span>${label}</span><div class="track"><div class="fill" style="width:${(n / Math.max(st.penaltiesDrop, st.penaltiesSD)) * 100}%"></div></div><span class="n">${n}</span></div>`)
+                .join('')}</div>`
+            : `<p class="muted" style="margin:0">No penalty strokes recorded. Nice.</p>`
+        }
       </div>
       <p class="muted" style="font-size:.8rem">Handicap is an estimate following World Handicap System averaging (best differentials of your last 20 complete rounds), with each hole capped at double bogey. Enter course rating and slope for accuracy.</p>`;
   }
@@ -420,6 +478,178 @@
       ${pts.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.score)}" r="3.5"><title>${fmtDate(p.date)}: ${p.score}</title></circle>`).join('')}
     </svg>`;
   }
+
+  // ---------- sync ----------
+  function loadSyncCfg() {
+    try {
+      return JSON.parse(localStorage.getItem(SYNC_KEY)) || null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function saveSyncCfg(cfg) {
+    try {
+      if (cfg) localStorage.setItem(SYNC_KEY, JSON.stringify(cfg));
+      else localStorage.removeItem(SYNC_KEY);
+    } catch (e) {
+      /* sync settings just won't persist */
+    }
+  }
+  let syncCfg = loadSyncCfg(); // { token, gistId, lastSync }
+  const syncState = { busy: false, again: false, error: null, timer: null };
+
+  function setSyncStatus() {
+    const link = document.getElementById('sync-link');
+    let text = 'Sync: off';
+    if (syncCfg) {
+      if (syncState.busy) text = 'Syncing…';
+      else if (syncState.error) text = 'Sync error';
+      else if (!navigator.onLine) text = 'Offline – will sync later';
+      else text = 'Synced' + (syncCfg.lastSync ? ' ' + timeAgo(syncCfg.lastSync) : '');
+    }
+    link.textContent = text;
+    link.classList.toggle('err', !!(syncCfg && syncState.error));
+    const box = document.getElementById('sync-status');
+    if (box) box.textContent = syncState.error ? 'Last attempt failed: ' + syncState.error : text;
+  }
+  function timeAgo(t) {
+    const s = Math.round((Date.now() - t) / 1000);
+    if (s < 45) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return new Date(t).toLocaleDateString();
+  }
+
+  function scheduleSync(delay) {
+    if (!syncCfg) return;
+    clearTimeout(syncState.timer);
+    syncState.timer = setTimeout(runSync, delay);
+  }
+
+  // Pull remote copy, merge with local, push if remote is behind.
+  async function runSync() {
+    if (!syncCfg || !navigator.onLine) return setSyncStatus();
+    if (syncState.busy) {
+      syncState.again = true;
+      return;
+    }
+    syncState.busy = true;
+    setSyncStatus();
+    try {
+      const client = new G.GistClient(syncCfg.token);
+      const remote = await client.pull(syncCfg.gistId);
+      const before = G.fingerprint(data);
+      const merged = G.mergeData(data, remote);
+      if (G.fingerprint(merged) !== G.fingerprint(remote)) await client.push(syncCfg.gistId, merged);
+      // Local edits made while we were waiting on the network are kept and
+      // picked up by the follow-up sync.
+      if (G.fingerprint(data) !== before) syncState.again = true;
+      else if (G.fingerprint(merged) !== before) {
+        data = merged;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+          /* ignore */
+        }
+        rerender();
+      }
+      syncCfg.lastSync = Date.now();
+      saveSyncCfg(syncCfg);
+      syncState.error = null;
+    } catch (e) {
+      syncState.error = e.message || String(e);
+    } finally {
+      syncState.busy = false;
+      setSyncStatus();
+      if (syncState.again) {
+        syncState.again = false;
+        scheduleSync(500);
+      }
+    }
+  }
+
+  async function connectSync(token) {
+    const client = new G.GistClient(token);
+    let gistId = await client.find();
+    if (!gistId) gistId = await client.create(data);
+    syncCfg = { token, gistId, lastSync: null };
+    saveSyncCfg(syncCfg);
+    syncState.error = null;
+    await runSync();
+  }
+
+  function renderSync() {
+    if (syncCfg) {
+      view.innerHTML = `
+        <h2>Sync</h2>
+        <div class="card">
+          <p style="margin-top:0"><strong>Connected.</strong> Rounds and courses sync automatically to a private GitHub Gist whenever you make a change, open the app, or come back to it.</p>
+          <p class="muted" id="sync-status"></p>
+          <div class="actions">
+            <button class="primary" id="sync-now">Sync now</button>
+            <a class="btn" href="https://gist.github.com/${esc(syncCfg.gistId)}" target="_blank" rel="noopener">View gist</a>
+            <button class="danger" id="sync-off">Disconnect this device</button>
+          </div>
+        </div>
+        <p class="muted" style="font-size:.85rem">To add another device, open the tracker there, go to Sync, and paste the same token (or a new one with gist access). It will find this data automatically.</p>`;
+      setSyncStatus();
+      view.querySelector('#sync-now').addEventListener('click', runSync);
+      view.querySelector('#sync-off').addEventListener('click', () => {
+        if (!confirm('Stop syncing on this device? Your data stays here and on GitHub.')) return;
+        syncCfg = null;
+        saveSyncCfg(null);
+        syncState.error = null;
+        setSyncStatus();
+        renderSync();
+      });
+      return;
+    }
+    view.innerHTML = `
+      <h2>Sync between devices</h2>
+      <div class="card">
+        <p style="margin-top:0">Your data is kept in a <strong>private GitHub Gist</strong> in your own GitHub account, and every device you connect stays in step. Edits made on different devices are merged rather than overwritten.</p>
+        <ol style="padding-left:1.2rem">
+          <li><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Golf%20Tracker" target="_blank" rel="noopener">Create a GitHub token</a> with only the <strong>gist</strong> scope (the link pre-selects it). Choose an expiry you're happy with.</li>
+          <li>Paste it below and connect. Do the same on each device. Using the same token is fine.</li>
+        </ol>
+        <form id="sync-form" class="row">
+          <label class="field" style="flex:1;min-width:220px">GitHub token
+            <input name="token" type="password" autocomplete="off" required placeholder="ghp_…" style="width:100%">
+          </label>
+          <button class="primary" type="submit">Connect</button>
+        </form>
+        <p class="muted" id="sync-msg" style="margin-bottom:0"></p>
+      </div>
+      <p class="muted" style="font-size:.85rem">The token is stored only in this browser and is sent only to GitHub. It can read and write your gists, nothing else. You can revoke it any time in GitHub settings.</p>`;
+    view.querySelector('#sync-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = view.querySelector('#sync-msg');
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+      msg.textContent = 'Connecting…';
+      try {
+        await connectSync(String(new FormData(e.target).get('token')).trim());
+        if (syncState.error) throw new Error(syncState.error);
+        renderSync();
+      } catch (err) {
+        syncCfg = null;
+        saveSyncCfg(null);
+        msg.textContent = 'Could not connect: ' + err.message;
+        btn.disabled = false;
+        setSyncStatus();
+      }
+    });
+  }
+
+  window.addEventListener('online', () => scheduleSync(0));
+  window.addEventListener('offline', setSyncStatus);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') scheduleSync(0);
+  });
+  setInterval(() => {
+    if (document.visibilityState === 'visible') scheduleSync(0);
+    else setSyncStatus();
+  }, 60000);
 
   // ---------- global handlers ----------
   document.addEventListener('click', (e) => {
@@ -446,8 +676,12 @@
     try {
       const d = JSON.parse(await file.text());
       if (!Array.isArray(d.courses) || !Array.isArray(d.rounds)) throw new Error('Not a Golf Tracker export');
-      if (!confirm(`Replace current data with ${d.rounds.length} rounds and ${d.courses.length} courses from this file?`)) return;
-      data = { version: 1, courses: d.courses, rounds: d.rounds };
+      if (!confirm(`Add ${d.rounds.length} rounds and ${d.courses.length} courses from this file? Matching records are replaced by the file's version.`)) return;
+      // Imported records count as fresh edits so they win over existing copies.
+      const now = Date.now();
+      const incoming = G.normalize({ courses: d.courses, rounds: d.rounds });
+      incoming.courses.concat(incoming.rounds).forEach((x) => (x.updatedAt = now));
+      data = G.mergeData(incoming, data, now);
       save();
       go('rounds');
     } catch (err) {
@@ -456,4 +690,6 @@
   });
 
   route();
+  setSyncStatus();
+  scheduleSync(0);
 })();
