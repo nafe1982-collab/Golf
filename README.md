@@ -12,6 +12,15 @@ A simple golf round tracker that runs entirely in the browser. You don't need to
 - **Sync between devices.** Keeps your phone, tablet and computer in step through a private GitHub Gist in your own account (see below).
 - **Export / import.** Back up your data as JSON. Importing merges the file into your existing data.
 
+## Put it on your phone
+
+1. Host it with GitHub Pages: in the repo, go to **Settings → Pages**, set **Source** to *Deploy from a branch*, then choose this branch and the `/ (root)` folder. The app will be at `https://<user>.github.io/Golf/`.
+2. Open that address on your phone and add it to your home screen:
+   - **iPhone (Safari):** tap Share, then **Add to Home Screen**.
+   - **Android (Chrome):** tap ⋮, then **Add to Home screen** or **Install app**.
+
+It opens full-screen like a normal app and still loads with no signal.
+
 ## Syncing
 
 1. On any device, open **Sync** (link at the bottom of the page).
