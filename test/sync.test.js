@@ -57,3 +57,11 @@ test('GistClient reports a bad token clearly', async () => {
   const c = new GistClient('bad', async () => ({ ok: false, status: 401 }));
   await assert.rejects(c.find(), /rejected the token/);
 });
+
+test('club bag syncs newest-wins', () => {
+  const a = { bag: { clubs: ['Driver'], updatedAt: 5 } };
+  const b = { bag: { clubs: ['Driver', 'Putter'], updatedAt: 9 } };
+  assert.deepEqual(mergeData(a, b, NOW).bag.clubs, ['Driver', 'Putter']);
+  assert.deepEqual(mergeData(b, a, NOW).bag.clubs, ['Driver', 'Putter']);
+  assert.deepEqual(mergeData({}, a, NOW).bag.clubs, ['Driver']);
+});

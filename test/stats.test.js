@@ -76,3 +76,68 @@ test('rounds saved before penalties existed still work', () => {
   r.holes.forEach((h) => delete h.penalties);
   assert.equal(S.roundTotals(r).penalties, 0);
 });
+
+test('shot-by-shot holes derive score, putts, fairway and penalties', () => {
+  const h = { par: 4, shots: [
+    { club: 'Driver', result: 'sd' },     // stroke 1, +1 penalty
+    { club: 'Driver', result: 'fairway' },// stroke 3
+    { club: '7i', result: 'green' },      // stroke 4
+    { club: 'Putter', result: 'green' },  // 5
+    { club: 'Putter', result: 'holed' },  // 6
+  ] };
+  S.applyShots(h);
+  assert.equal(h.strokes, 6);
+  assert.equal(h.putts, 2);
+  assert.equal(h.fairway, false);
+  assert.deepEqual(h.penalties, [{ type: 'sd' }]);
+  assert.deepEqual(S.strokeNumbers(h.shots), [1, 3, 4, 5, 6]);
+  assert.ok(S.isHoled(h));
+  const p3 = S.applyShots({ par: 3, shots: [{ club: '7i', result: 'holed' }] });
+  assert.equal(p3.strokes, 1);
+  assert.equal(p3.fairway, null);
+  assert.equal(p3.putts, 0);
+});
+
+test('quick-entry holes are left alone by applyShots', () => {
+  const h = { par: 4, strokes: 5, putts: 2, fairway: true, penalties: [] };
+  assert.deepEqual(S.applyShots({ ...h }), h);
+});
+
+test('clubStats counts tee fairways and greens hit per club', () => {
+  const round = { holes: [
+    { par: 4, shots: [{ club: 'Driver', result: 'fairway' }, { club: '8i', result: 'green' }, { club: 'Putter', result: 'holed' }] },
+    { par: 4, shots: [{ club: 'Driver', result: 'rough' }, { club: '8i', result: 'bunker' }, { club: 'SW', result: 'green' }, { club: 'Putter', result: 'holed' }] },
+  ] };
+  const st = Object.fromEntries(S.clubStats([round]).map((c) => [c.club, c]));
+  assert.equal(st.Driver.teeShots, 2);
+  assert.equal(st.Driver.teeFairways, 1);
+  assert.equal(st['8i'].approach, 2);
+  assert.equal(st['8i'].toGreen, 1);
+  assert.equal(st.Putter.uses, 2);
+  assert.equal(S.clubStats([round])[0].club, 'Driver');
+});
+
+test('tee shots on par 4s are not counted as missed greens', () => {
+  const round = { holes: [
+    { par: 4, shots: [{ club: 'Driver', result: 'fairway' }, { club: '8i', result: 'green' }] },
+    { par: 3, shots: [{ club: 'Driver', result: 'green' }] },
+  ] };
+  const d = S.clubStats([round]).find((c) => c.club === 'Driver');
+  assert.equal(d.approach, 1);
+  assert.equal(d.toGreen, 1);
+});
+
+test('replayed tee shot after OB still counts as a tee shot', () => {
+  const round = { holes: [{ par: 4, shots: [{ club: 'Driver', result: 'sd' }, { club: 'Driver', result: 'fairway' }, { club: '9i', result: 'green' }] }] };
+  const d = S.clubStats([round]).find((c) => c.club === 'Driver');
+  assert.deepEqual([d.teeShots, d.teeFairways, d.approach, d.penalties], [2, 1, 0, 1]);
+});
+
+test('a hole being played shot by shot only counts once holed', () => {
+  const r = { holes: [
+    { par: 4, strokes: 4, putts: 2 },
+    S.applyShots({ par: 4, shots: [{ club: 'Driver', result: 'sd' }] }),
+  ] };
+  assert.equal(S.roundTotals(r).holesPlayed, 1);
+  assert.equal(S.roundTotals(r).strokes, 4);
+});

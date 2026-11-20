@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f6f43">
   <title>Golf Tracker</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,22 +16,22 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>⛳ Golf Tracker</h1>
-    <nav class="tabs" aria-label="Sections">
-      <a href="#rounds" data-tab="rounds">Rounds</a>
-      <a href="#new" data-tab="new">New round</a>
-      <a href="#courses" data-tab="courses">Courses</a>
-      <a href="#stats" data-tab="stats">Stats</a>
-    </nav>
+    <h1>Golf Tracker</h1>
+    <a href="#sync" id="sync-dot" class="sync-dot off"><i></i><span>Sync off</span></a>
   </header>
 
   <main id="view" tabindex="-1"></main>
 
-  <footer class="foot">
-    <a href="#sync" id="sync-link">Sync: off</a>
-    <button type="button" class="link" id="export-btn">Export</button>
-    <label class="link">Import<input type="file" id="import-input" accept="application/json" hidden></label>
-  </footer>
+  <nav class="tabbar" aria-label="Sections">
+    <a href="#rounds" data-tab="rounds">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Rounds</a>
+    <a href="#new" id="tab-play" data-tab="play">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21V3l9 4-9 4"/><path d="M5 21h8"/></svg>Play</a>
+    <a href="#stats" data-tab="stats">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V12M12 20V5M19 20v-9"/></svg>Stats</a>
+    <a href="#more" data-tab="more">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>More</a>
+  </nav>
 
   <script src="stats.js"></script>
   <script src="sync.js"></script>

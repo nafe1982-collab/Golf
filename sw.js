@@ -1,6 +1,6 @@
 // Offline support: serve the app from the network when possible (so updates
 // show up straight away), falling back to the cached copy when offline.
-const CACHE = 'golf-tracker-v1';
+const CACHE = 'golf-tracker-v2';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'stats.js', 'sync.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

@@ -16,6 +16,7 @@
       courses: Array.isArray(d && d.courses) ? d.courses : [],
       rounds: Array.isArray(d && d.rounds) ? d.rounds : [],
       deleted: d && d.deleted && typeof d.deleted === 'object' ? d.deleted : {},
+      bag: d && d.bag && Array.isArray(d.bag.clubs) ? d.bag : null,
     };
   }
 
@@ -45,6 +46,8 @@
       courses: mergeList(local.courses, remote.courses),
       rounds: mergeList(local.rounds, remote.rounds),
       deleted,
+      // The club bag is a single setting: newest copy wins.
+      bag: !remote.bag || (local.bag && (local.bag.updatedAt || 0) >= (remote.bag.updatedAt || 0)) ? local.bag : remote.bag,
     };
   }
 
@@ -56,6 +59,7 @@
       c: n.courses.slice().sort(byId),
       r: n.rounds.slice().sort(byId),
       d: Object.keys(n.deleted).sort().map((k) => [k, n.deleted[k]]),
+      b: n.bag,
     });
   }
 

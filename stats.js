@@ -6,15 +6,94 @@
   const sum = (xs) => xs.reduce((a, b) => a + b, 0);
   const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
-  // A hole is "played" once strokes are entered.
+  // A hole counts once its score is entered, or, when it's being recorded
+  // shot by shot, once the ball is holed (so a half-played hole doesn't skew
+  // the running score).
   function playedHoles(round) {
-    return round.holes.filter((h) => isNum(h.strokes) && h.strokes > 0);
+    return round.holes.filter((h) => isNum(h.strokes) && h.strokes > 0 && (!shotsOf(h).length || isHoled(h)));
   }
 
   // Penalty types: 'drop' (1 stroke: penalty area, unplayable, etc.) and
   // 'sd' (stroke and distance: OB, lost ball, replay from previous spot).
   const PENALTY_TYPES = { drop: 'Drop', sd: 'Stroke & distance' };
   const penaltiesOf = (h) => (Array.isArray(h.penalties) ? h.penalties : []);
+
+  // ---- Clubs and shot-by-shot entry ----
+  const ALL_CLUBS = ['Driver', '3W', '5W', '7W', '2H', '3H', '4H', '5H', '2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW', 'Putter'];
+  const DEFAULT_BAG = ['Driver', '3W', '5W', '4H', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW', 'Putter'];
+  // Where a shot finished. drop / sd also add a penalty stroke.
+  const RESULTS = {
+    fairway: 'Fairway',
+    rough: 'Rough',
+    green: 'Green',
+    holed: 'Holed',
+    bunker: 'Bunker',
+    recovery: 'Trees / other',
+    drop: 'Penalty area (drop)',
+    sd: 'OB / lost (stroke & distance)',
+  };
+  const shotsOf = (h) => (Array.isArray(h.shots) ? h.shots : []);
+  const isPutter = (club) => club === 'Putter';
+
+  // Holes entered shot by shot get their score, putts, fairway and penalties
+  // derived from the shots. Holes with no shots keep whatever was typed in.
+  function applyShots(h) {
+    const shots = shotsOf(h);
+    if (!shots.length) return h;
+    h.penalties = shots.filter((s) => s.result === 'drop' || s.result === 'sd').map((s) => ({ type: s.result }));
+    h.strokes = shots.length + h.penalties.length;
+    h.putts = shots.filter((s) => isPutter(s.club)).length;
+    const tee = shots[0].result;
+    h.fairway = h.par < 4 ? null : tee === 'fairway' || tee === 'green' || tee === 'holed';
+    return h;
+  }
+
+  // Stroke number each shot was played as (penalty strokes count too).
+  function strokeNumbers(shots) {
+    let n = 0;
+    return shots.map((s) => {
+      const here = ++n;
+      if (s.result === 'drop' || s.result === 'sd') n++;
+      return here;
+    });
+  }
+
+  const isHoled = (h) => {
+    const shots = shotsOf(h);
+    return shots.length ? shots[shots.length - 1].result === 'holed' : isNum(h.strokes) && h.strokes > 0;
+  };
+
+  function clubStats(rounds) {
+    const by = {};
+    const get = (c) => (by[c] = by[c] || { club: c, uses: 0, teeShots: 0, teeFairways: 0, approach: 0, toGreen: 0, penalties: 0 });
+    rounds.forEach((r) =>
+      r.holes.forEach((h) => {
+        // Where each shot was played from: stroke & distance replays from the
+        // same spot, otherwise from wherever the last shot finished.
+        let lie = 'tee';
+        shotsOf(h).forEach((s) => {
+          const from = lie;
+          if (s.result !== 'sd') lie = s.result;
+          if (!s.club) return;
+          const c = get(s.club);
+          c.uses++;
+          if (s.result === 'drop' || s.result === 'sd') c.penalties++;
+          const teeOnLongHole = from === 'tee' && h.par >= 4;
+          if (teeOnLongHole) {
+            c.teeShots++;
+            if (s.result === 'fairway' || s.result === 'green' || s.result === 'holed') c.teeFairways++;
+          }
+          // Tee shots on par 4s/5s aren't trying to find the green.
+          if (!isPutter(s.club) && from !== 'green' && !teeOnLongHole) {
+            c.approach++;
+            if (s.result === 'green' || s.result === 'holed') c.toGreen++;
+          }
+        });
+      })
+    );
+    const order = (c) => (ALL_CLUBS.indexOf(c) === -1 ? 99 : ALL_CLUBS.indexOf(c));
+    return Object.values(by).sort((a, b) => order(a.club) - order(b.club));
+  }
 
   function roundTotals(round) {
     const holes = playedHoles(round);
@@ -128,7 +207,7 @@
     };
   }
 
-  const api = { PENALTY_TYPES, penaltiesOf, roundTotals, isGir, scoreName, formatToPar, differential, handicapIndex, overallStats };
+  const api = { ALL_CLUBS, DEFAULT_BAG, RESULTS, shotsOf, applyShots, strokeNumbers, isHoled, clubStats, PENALTY_TYPES, penaltiesOf, roundTotals, isGir, scoreName, formatToPar, differential, handicapIndex, overallStats };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GolfStats = api;
 })(typeof window !== 'undefined' ? window : globalThis);
